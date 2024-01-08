@@ -1,0 +1,21 @@
+{
+  "name": "bebopv2.0",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "ts": "tsc --noEmit"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.6.5",
+    "ethers": "^6.9.2",
+    "socks-proxy-agent": "^8.0.2"
+  },
+  "devDependencies": {
+    "prettier": "^3.1.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
