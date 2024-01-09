@@ -26,7 +26,7 @@ export type Quote = {
 export type Permit2Data = {
   signature: string;
   token_addresses: string[];
-  token_nonces: bigint[];
+  token_nonces: string[];
   approvals_deadline: number;
 };
 

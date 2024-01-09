@@ -53,7 +53,7 @@ export const statsDB = {
 };
 
 export function readData(): { keys: string[]; proxies?: string[] } {
-  const keys = fs.readFileSync('./keys.txt', 'utf8').replaceAll('\r', '').split('\n');
+  const keys = fs.readFileSync('./deps/keys.txt', 'utf8').replaceAll('\r', '').split('\n');
 
   keys.every((key, index) => {
     if (!((key.startsWith('0x') && key.length === 66) || key.length === 64)) {
@@ -63,7 +63,7 @@ export function readData(): { keys: string[]; proxies?: string[] } {
   });
 
   if (FLAGS.useProxy) {
-    const proxies = fs.readFileSync('./proxies.txt', 'utf8').replaceAll('\r', '').split('\n');
+    let proxies = fs.readFileSync('./deps/proxies.txt', 'utf8').replaceAll('\r', '').split('\n');
 
     const proxyRegex = /^[a-zA-Z0-9]+:[a-zA-Z0-9]+@[0-9.]+:[0-9]+$/;
 
@@ -72,6 +72,10 @@ export function readData(): { keys: string[]; proxies?: string[] } {
         throw new Error(`Invalid proxy at line ${index + 1}.`);
       }
       return true;
+    });
+
+    proxies = proxies.map((proxy) => {
+      return (proxy = 'socks5://' + proxy);
     });
 
     if (keys.length !== proxies.length) {

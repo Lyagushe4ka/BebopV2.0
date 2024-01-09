@@ -17,8 +17,8 @@ export async function getQuote(
   const proxyAgent = FLAGS.useProxy ? new SocksProxyAgent(proxy) : undefined;
 
   const name = CHAINS[chainId].name;
-  const tokenInAddresses = tokensIn.map((token) => TOKENS[chainId][token]);
-  const tokenOutAddresses = tokensOut.map((token) => TOKENS[chainId][token]);
+  const tokenInAddresses = tokensIn.map((token) => TOKENS[chainId][token].address);
+  const tokenOutAddresses = tokensOut.map((token) => TOKENS[chainId][token].address);
   const tokensInStr = tokenInAddresses.join('%2C');
   const tokensOutStr = tokenOutAddresses.join('%2C');
   const sellAmountsStr = amountsIn.map((amount) => amount.toString()).join('%2C');
@@ -32,6 +32,7 @@ export async function getQuote(
   );
 
   if (response.data.error) {
+    console.log(response.data.error);
     return undefined;
   }
 
@@ -57,14 +58,11 @@ export async function sendOrder(
 
   const url = `${API_URL}/${name}/v2/order`;
 
-  const response = await retry(() =>
-    axios.post(
-      url,
-      { permit2, quote_id, signature },
-      { httpAgent: proxyAgent, httpsAgent: proxyAgent },
-    ),
+  const response = await axios.post(
+    url,
+    { permit2, quote_id, signature },
+    { httpAgent: proxyAgent, httpsAgent: proxyAgent },
   );
-
   if (response.status !== 200 || response.data.error || response.data.status !== 'Success') {
     return undefined;
   }

@@ -4,6 +4,8 @@ export const PERMIT2 = '0x000000000022D473030F116dDEE9F6B43aC78BA3';
 export const BEBOP_ROUTER = '0xBeB09000fa59627dc02Bb55448AC1893EAa501A5';
 export const API_URL = 'https://api.bebop.xyz';
 
+export const MAX_UINT160 = BigInt('0xffffffffffffffffffffffffffffffffffffffff');
+
 export const TOKEN_TICKERS = ['USDT', 'USDC', 'DAI'] as const;
 
 export const CHAINS = {
@@ -15,7 +17,7 @@ export const CHAINS = {
   },
   [Chains.Polygon]: {
     name: 'polygon',
-    rpc: 'https://polygon.meowrpc.com',
+    rpc: 'https://polygon.drpc.org', //'https://polygon.meowrpc.com',
     explorer: 'https://polygonscan.com/tx/',
     chainId: 137,
   },
@@ -69,7 +71,7 @@ export const TOKENS: Record<Chains, TokensInfo> = {
     },
     USDC: {
       name: 'USDC',
-      address: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359',
+      address: '0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174',
       decimals: 6,
       isStable: true,
     },
@@ -155,20 +157,20 @@ export const typesBebop = {
 };
 
 export const typesPermit2 = {
-  EIP712Domain: [
-    {
-      name: 'name',
-      type: 'string',
-    },
-    {
-      name: 'chainId',
-      type: 'uint256',
-    },
-    {
-      name: 'verifyingContract',
-      type: 'address',
-    },
-  ],
+  // EIP712Domain: [
+  //   {
+  //     name: 'name',
+  //     type: 'string',
+  //   },
+  //   {
+  //     name: 'chainId',
+  //     type: 'uint256',
+  //   },
+  //   {
+  //     name: 'verifyingContract',
+  //     type: 'address',
+  //   },
+  // ],
   PermitBatch: [
     {
       name: 'details',

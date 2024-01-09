@@ -6,7 +6,14 @@ import {
   Wallet,
 } from 'ethers';
 import { Chains, Permit2Data, Tokens } from './types';
-import { BEBOP_ROUTER, PERMIT2, TOKENS, permit2Domain, typesPermit2 } from './constants';
+import {
+  BEBOP_ROUTER,
+  MAX_UINT160,
+  PERMIT2,
+  TOKENS,
+  permit2Domain,
+  typesPermit2,
+} from './constants';
 import { Erc20Abi, Permit2Abi } from './abi';
 import { retry } from './utils';
 
@@ -47,7 +54,7 @@ export async function permit2Allowance(
   wallet: Wallet,
   chainId: Chains,
   token: Tokens,
-  spender: string,
+  spender = BEBOP_ROUTER,
 ): Promise<{ amount: bigint; expiration: bigint; nonce: bigint }> {
   const tokenAddress = TOKENS[chainId][token].address;
 
@@ -69,7 +76,8 @@ export async function getPermit2Data(
   chainId: Chains,
   tokens: Array<Tokens>,
   deadline: number,
-  amount = MaxUint256,
+  amount = MAX_UINT160,
+  spender = BEBOP_ROUTER,
 ): Promise<Permit2Data> {
   let value = {
     details: [] as any[],
@@ -78,20 +86,19 @@ export async function getPermit2Data(
   };
 
   for (const token of tokens) {
-    const { nonce } = await permit2Allowance(wallet, chainId, token, BEBOP_ROUTER);
+    const { nonce } = await permit2Allowance(wallet, chainId, token, spender);
 
     value.details.push({
       token: TOKENS[chainId][token].address,
       amount,
       expiration: deadline,
-      nonce,
+      nonce: nonce.toString(),
     });
   }
 
   const signature = await retry(() =>
     wallet.signTypedData(permit2Domain(chainId), typesPermit2, value),
   );
-
   const token_addresses = value.details.map((detail) => detail.token);
   const token_nonces = value.details.map((detail) => detail.nonce);
   const approvals_deadline = deadline;

@@ -1,6 +1,8 @@
-import { Wallet } from 'ethers';
+import { Wallet, formatUnits } from 'ethers';
 import { CHAIN, FLAGS, LIMITS } from './deps/config';
 import {
+  CHAINS,
+  TOKENS,
   TOKEN_TICKERS,
   allowance,
   approve,
@@ -41,6 +43,7 @@ async function main() {
 
     const wallet = new Wallet(key, provider);
     const address = wallet.address;
+    console.log(`\nUsing wallet ${address}\n`);
 
     if (FLAGS.useTxLimit) {
       const txCountSingle = statsDB.get(address, 'transactionsSingle');
@@ -89,7 +92,6 @@ async function main() {
       tokensTo = tokensTo.slice(0, numTokens); // Get the first 1 or 2 tokens
     }
 
-    await sendTelegramMessage(`\nSwapping ${tokensFrom.join(', ')} to ${tokensTo.join(', ')}\n`);
     console.log(`\nSwapping ${tokensFrom.join(', ')} to ${tokensTo.join(', ')}\n`);
 
     for (const token of tokensFrom) {
@@ -102,7 +104,12 @@ async function main() {
           console.log(`\nWallet ${address} failed to approve ${token}.\n`);
           continue;
         } else {
-          console.log(`\nWallet ${address} approved ${token} for Permit2 contract.\n`);
+          console.log(
+            `\nWallet ${address} approved ${token} for Permit2 contract, tx: ${CHAINS[CHAIN].explorer}/${tx.hash}\n`,
+          );
+          await sendTelegramMessage(
+            `\nWallet ${address} approved ${token} for Permit2 contract, tx: ${CHAINS[CHAIN].explorer}/${tx.hash}\n`,
+          );
         }
 
         await sleep({ seconds: 5 });
@@ -126,6 +133,27 @@ async function main() {
       console.log(`\nWallet ${address} failed to send order.\n`);
       continue;
     }
+
+    statsDB.increment(address, 'fees', quote.gasFee.usd);
+
+    const volume = amountsIn.reduce((a, b, i) => {
+      const amount = Number(formatUnits(b, TOKENS[CHAIN][tokensFrom[i]].decimals));
+      return a + amount;
+    }, 0);
+
+    if (tokensFrom.length === 1 && tokensTo.length === 1) {
+      statsDB.increment(address, 'transactionsSingle', 1);
+      statsDB.increment(address, 'volumeSingle', volume);
+    } else {
+      statsDB.increment(address, 'transactionsMulti', 1);
+      statsDB.increment(address, 'volumeMulti', volume);
+    }
+
+    await sendTelegramMessage(
+      `\nSwapped ${tokensFrom.join(', ')} to ${tokensTo.join(', ')}, volume made: ${volume}$, tx: ${
+        CHAINS[CHAIN].explorer
+      }/${order}\n`,
+    );
   }
 }
 
