@@ -1,10 +1,39 @@
-import { Contract, JsonRpcProvider, Wallet, parseUnits } from 'ethers';
+import { Contract, JsonRpcProvider, Wallet, formatUnits, parseUnits } from 'ethers';
 import { CHAINS, TOKENS } from './constants';
 import { Chains, TimeSeparated, Tokens } from './types';
 import { TG_CHAT_ID, TG_TOKEN, MIN_BAL_IN_USD } from '../deps/config';
 import axios from 'axios';
 import { Erc20Abi } from './abi';
 import { updateRates, ratesData } from './data';
+
+export const gasPriceGuard = async (chainId: Chains, maxGasPrice: string) => {
+  console.log(`\n[GAS PRICE GUARD] Started for ${CHAINS[chainId].name} chain\n`);
+  const rpc = chainId === Chains.Polygon ? CHAINS[chainId].rpc : CHAINS[Chains.Ethereum].rpc;
+  const provider = new JsonRpcProvider(rpc);
+  const maxGasPriceInWei = parseUnits(maxGasPrice, 'gwei');
+  let startingWaitTime = 1;
+  let sumWaitTime = 0;
+
+  while (true) {
+    sumWaitTime += startingWaitTime;
+
+    const { gasPrice } = await retry(() => provider.getFeeData());
+
+    if (gasPrice! < maxGasPriceInWei) {
+      console.log('\n[GAS PRICE GUARD] Gas price is ok, continuing...\n');
+      return;
+    }
+    console.log(
+      `[GAS PRICE GUARD] Gas price is too high, waiting for ${startingWaitTime} minute(s), current gas price: ${formatUnits(
+        gasPrice!,
+        'gwei',
+      )} gwei, summary wait time: ${sumWaitTime} minute(s)`,
+    );
+
+    startingWaitTime += 1;
+    await sleep({ minutes: startingWaitTime });
+  }
+};
 
 export const getBalances = async (wallet: Wallet, chainId: Chains) => {
   let balances: Partial<Record<Tokens, bigint>> = {};
@@ -14,12 +43,12 @@ export const getBalances = async (wallet: Wallet, chainId: Chains) => {
     if (!ratesData || ratesData.timestamp + 60 * 60 * 1000 < Date.now()) {
       await updateRates();
     }
-    const tokenRate = ratesData.rates[token.name];
+    const tokenRate = token.isStable ? 1 : ratesData.rates[token.name];
 
     const minbalInEther = token.isStable
       ? MIN_BAL_IN_USD.toString()
       : (MIN_BAL_IN_USD * tokenRate!).toFixed(6);
-    const minBalInWei = parseUnits(minbalInEther, 18);
+    const minBalInWei = parseUnits(minbalInEther, token.decimals);
 
     const balance = await retry(() => tokenInstance.balanceOf(wallet.address));
 
@@ -46,6 +75,13 @@ export const shuffleArray = <T>(array: T[]) => {
 
 export const rndArrElement = <T>(array: T[]): T => {
   return array[Math.floor(Math.random() * array.length)];
+};
+
+export const convertTimeToSeconds = (time: TimeSeparated): number => {
+  const seconds = time.seconds || 0;
+  const minutes = time.minutes || 0;
+  const hours = time.hours || 0;
+  return seconds + minutes * 60 + hours * 60 * 60;
 };
 
 export const sleep = async (from: TimeSeparated, to?: TimeSeparated): Promise<void> => {

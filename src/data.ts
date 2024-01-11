@@ -10,7 +10,14 @@ export let ratesData: RatesData;
 export const statsDB = {
   load() {
     if (fs.existsSync('./deps/stats.json')) {
-      data = JSON.parse(fs.readFileSync('./deps/stats.json', 'utf8'));
+      const fileData = fs.readFileSync('./deps/stats.json', 'utf8');
+
+      if (fileData === '') {
+        data = {};
+        return;
+      }
+
+      data = JSON.parse(fileData);
     } else {
       data = {};
     }
@@ -44,11 +51,14 @@ export const statsDB = {
     if (!data[wallet]) {
       this.init(wallet);
     }
-    data[wallet][statName] = (data[wallet][statName] || 0) + value;
+
+    const valueRounded = Number(value.toFixed(2));
+
+    data[wallet][statName] = (data[wallet][statName] || 0) + valueRounded;
   },
 
   save() {
-    fs.writeFileSync('./deps/stats.json', JSON.stringify(data));
+    fs.writeFileSync('./deps/stats.json', data ? JSON.stringify(data, null, 2) : '');
   },
 };
 
@@ -119,5 +129,8 @@ export const updateRates = async (): Promise<void> => {
     }
   }
 
-  ratesData.timestamp = Date.now();
+  ratesData = {
+    ...ratesData,
+    timestamp: Date.now(),
+  };
 };

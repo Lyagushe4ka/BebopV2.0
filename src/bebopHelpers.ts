@@ -63,6 +63,7 @@ export async function sendOrder(
     { permit2, quote_id, signature },
     { httpAgent: proxyAgent, httpsAgent: proxyAgent },
   );
+
   if (response.status !== 200 || response.data.error || response.data.status !== 'Success') {
     return undefined;
   }

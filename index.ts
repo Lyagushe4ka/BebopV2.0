@@ -4,12 +4,16 @@ import {
   CHAINS,
   TOKENS,
   TOKEN_TICKERS,
+  Tokens,
   allowance,
   approve,
+  convertTimeToSeconds,
   createProvider,
+  gasPriceGuard,
   getBalances,
   getPermit2Data,
   getQuote,
+  randomBetween,
   readData,
   sendOrder,
   sendTelegramMessage,
@@ -36,6 +40,9 @@ async function main() {
       break;
     }
 
+    await gasPriceGuard(CHAIN, LIMITS.maxGasPrice[CHAIN]);
+
+    let lastSwap = false;
     const rnd = Math.floor(Math.random() * keys.length);
 
     const key = keys[rnd];
@@ -56,7 +63,8 @@ async function main() {
         await sendTelegramMessage(
           `\nWallet ${address} reached tx limit, removing from the list...\n`,
         );
-        continue;
+
+        lastSwap = true;
       }
     } else if (FLAGS.useVolumeLimit) {
       const volumeSingle = statsDB.get(address, 'volumeSingle');
@@ -69,13 +77,18 @@ async function main() {
         await sendTelegramMessage(
           `\nWallet ${address} reached volume limit, removing from the list...\n`,
         );
-        continue;
+
+        lastSwap = true;
       }
     }
 
     const balances = await getBalances(wallet, CHAIN);
 
     if (Object.keys(balances).length === 0) {
+      if (lastSwap) {
+        continue;
+      }
+
       keys.splice(rnd, 1);
       proxies.splice(rnd, 1);
       console.log(`\nWallet ${address} is empty, removing from the list...\n`);
@@ -83,13 +96,35 @@ async function main() {
       continue;
     }
 
-    const tokensFrom = [...TOKEN_TICKERS.filter((token) => balances[token])];
-    const amountsIn = tokensFrom.map((token) => balances[token]!);
+    let tokensFrom = [...TOKEN_TICKERS.filter((token) => balances[token])];
+    let amountsIn = tokensFrom.map((token) => balances[token]!);
     let tokensTo = [...shuffleArray(TOKEN_TICKERS.filter((token) => !tokensFrom.includes(token)))];
 
     if (tokensTo.length > 1) {
-      const numTokens = Math.floor(Math.random() * 2) + 1; // Randomly choose either 1 or 2
+      let numTokens = Math.floor(Math.random() * 2) + 1; // Randomly choose either 1 or 2
+
+      const txCountSingle = statsDB.get(address, 'transactionsSingle');
+      const txCountMulti = statsDB.get(address, 'transactionsMulti');
+      if (LIMITS.maxTxMulti <= txCountMulti) {
+        numTokens = 1;
+      } else if (LIMITS.maxTxSingle <= txCountSingle) {
+        numTokens = 2;
+      }
+
       tokensTo = tokensTo.slice(0, numTokens); // Get the first 1 or 2 tokens
+    }
+
+    if (lastSwap) {
+      tokensFrom = Object.keys(balances).filter((token) => token !== FLAGS.finalToken) as Tokens[];
+
+      if (tokensFrom.length === 0) {
+        console.log(`\nNothing to swap to final token on wallet: ${address}\n`);
+        await sendTelegramMessage(`\nNothing to swap to final token on wallet: ${address}\n`);
+        continue;
+      }
+
+      amountsIn = tokensFrom.map((token) => balances[token]!);
+      tokensTo = [FLAGS.finalToken];
     }
 
     console.log(`\nSwapping ${tokensFrom.join(', ')} to ${tokensTo.join(', ')}\n`);
@@ -152,8 +187,20 @@ async function main() {
     await sendTelegramMessage(
       `\nSwapped ${tokensFrom.join(', ')} to ${tokensTo.join(', ')}, volume made: ${volume}$, tx: ${
         CHAINS[CHAIN].explorer
-      }/${order}\n`,
+      }${order}\n`,
     );
+    console.log(
+      `\nSwapped ${tokensFrom.join(', ')} to ${tokensTo.join(', ')}, volume made: ${volume}$, tx: ${
+        CHAINS[CHAIN].explorer
+      }${order}\n`,
+    );
+
+    const timeoutMin = convertTimeToSeconds(LIMITS.timeoutMin);
+    const timeoutMax = convertTimeToSeconds(LIMITS.timeoutMax);
+    const rndTimeout = randomBetween(timeoutMin, timeoutMax, 0);
+
+    console.log(`\nSleeping for ${rndTimeout} seconds / ${(rndTimeout / 60).toFixed(1)} minutes\n`);
+    await sleep({ seconds: rndTimeout });
   }
 }
 
