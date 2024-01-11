@@ -1,7 +1,7 @@
 import { Chains, Tokens } from '../src';
 
-export const TG_CHAT_ID = 0; // specify your telegram chat id to receive notifications
-export const TG_TOKEN = ''; // specify your telegram bot token to receive notifications
+export const TG_CHAT_ID: number = 0; // specify your telegram chat id to receive notifications
+export const TG_TOKEN: string = ''; // specify your telegram bot token to receive notifications
 
 export const MIN_BAL_IN_USD = 0.5; // specify minimum balance in USD to swap this token
 export const CHAIN = Chains.Polygon; // specify chain, options: Chains.Polygon, Chains.Arbitrum, Chains.Ethereum
