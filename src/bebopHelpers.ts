@@ -2,7 +2,7 @@ import { SocksProxyAgent } from 'socks-proxy-agent';
 import { Chains, Permit2Data, Quote, Tokens } from './types';
 import axios from 'axios';
 import { API_URL, CHAINS, TOKENS, bebopDomain, typesBebop } from './constants';
-import { retry } from './utils';
+import { randomBetween, retry } from './utils';
 import { Wallet } from 'ethers';
 import { FLAGS } from '../deps/config';
 
@@ -23,7 +23,9 @@ export async function getQuote(
   const tokensOutStr = tokenOutAddresses.join('%2C');
   const sellAmountsStr = amountsIn.map((amount) => amount.toString()).join('%2C');
 
-  const ratios = tokenOutAddresses.length > 1 ? `&buy_tokens_ratios=0.5%2C0.5` : '';
+  const ratio = randomBetween(0.2, 0.6, 1);
+
+  const ratios = tokenOutAddresses.length > 1 ? `&buy_tokens_ratios=${ratio}%2C${1 - ratio}` : '';
 
   const url = `${API_URL}/${name}/v2/quote?sell_tokens=${tokensInStr}&buy_tokens=${tokensOutStr}&sell_amounts=${sellAmountsStr}&taker_address=${wallet.address}&source=bebop&approval_type=Permit2${ratios}`;
 

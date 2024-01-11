@@ -1,5 +1,5 @@
-import { Wallet, formatUnits } from 'ethers';
-import { CHAIN, FLAGS, LIMITS } from './deps/config';
+import { Wallet, formatUnits, parseUnits } from 'ethers';
+import { CHAIN, FLAGS, LIMITS, MIN_BAL_IN_USD } from './deps/config';
 import {
   CHAINS,
   TOKENS,
@@ -97,7 +97,12 @@ async function main() {
     }
 
     let tokensFrom = [...TOKEN_TICKERS.filter((token) => balances[token])];
-    let amountsIn = tokensFrom.map((token) => balances[token]!);
+    let amountsIn = tokensFrom.map((token) => {
+      const minAmount = MIN_BAL_IN_USD;
+      const maxAmount = formatUnits(balances[token]!, TOKENS[CHAIN][token].decimals);
+      const rndAmount = randomBetween(minAmount, +maxAmount, 2);
+      return parseUnits(rndAmount.toString(), TOKENS[CHAIN][token].decimals);
+    });
     let tokensTo = [...shuffleArray(TOKEN_TICKERS.filter((token) => !tokensFrom.includes(token)))];
 
     if (tokensTo.length > 1) {
@@ -185,14 +190,14 @@ async function main() {
     }
 
     await sendTelegramMessage(
-      `\nSwapped ${tokensFrom.join(', ')} to ${tokensTo.join(', ')}, volume made: ${volume}$, tx: ${
-        CHAINS[CHAIN].explorer
-      }${order}\n`,
+      `\nSwapped ${tokensFrom.join(', ')} to ${tokensTo.join(', ')}, volume made: ${volume.toFixed(
+        2,
+      )}$, tx: ${CHAINS[CHAIN].explorer}${order}\n`,
     );
     console.log(
-      `\nSwapped ${tokensFrom.join(', ')} to ${tokensTo.join(', ')}, volume made: ${volume}$, tx: ${
-        CHAINS[CHAIN].explorer
-      }${order}\n`,
+      `\nSwapped ${tokensFrom.join(', ')} to ${tokensTo.join(', ')}, volume made: ${volume.toFixed(
+        2,
+      )}$, tx: ${CHAINS[CHAIN].explorer}${order}\n`,
     );
 
     const timeoutMin = convertTimeToSeconds(LIMITS.timeoutMin);
@@ -200,6 +205,9 @@ async function main() {
     const rndTimeout = randomBetween(timeoutMin, timeoutMax, 0);
 
     console.log(`\nSleeping for ${rndTimeout} seconds / ${(rndTimeout / 60).toFixed(1)} minutes\n`);
+    await sendTelegramMessage(
+      `\nSleeping for ${rndTimeout} seconds / ${(rndTimeout / 60).toFixed(1)} minutes\n`,
+    );
     await sleep({ seconds: rndTimeout });
   }
 }
