@@ -12,6 +12,7 @@ export async function getQuote(
   tokensIn: Tokens[],
   tokensOut: Tokens[],
   amountsIn: bigint[],
+  ratios: number[],
   proxy: string,
 ): Promise<Quote | undefined> {
   const proxyAgent = FLAGS.useProxy ? new SocksProxyAgent(proxy) : undefined;
@@ -23,11 +24,10 @@ export async function getQuote(
   const tokensOutStr = tokenOutAddresses.join('%2C');
   const sellAmountsStr = amountsIn.map((amount) => amount.toString()).join('%2C');
 
-  const ratio = randomBetween(0.2, 0.6, 1);
+  const ratiosString =
+    tokenOutAddresses.length > 1 ? `&buy_tokens_ratios=${ratios[0]}%2C${ratios[1]}` : '';
 
-  const ratios = tokenOutAddresses.length > 1 ? `&buy_tokens_ratios=${ratio}%2C${1 - ratio}` : '';
-
-  const url = `${API_URL}/${name}/v2/quote?sell_tokens=${tokensInStr}&buy_tokens=${tokensOutStr}&sell_amounts=${sellAmountsStr}&taker_address=${wallet.address}&source=bebop&approval_type=Permit2${ratios}`;
+  const url = `${API_URL}/${name}/v2/quote?sell_tokens=${tokensInStr}&buy_tokens=${tokensOutStr}&sell_amounts=${sellAmountsStr}&taker_address=${wallet.address}&source=bebop&approval_type=Permit2${ratiosString}`;
 
   const response = await retry(() =>
     axios.get(url, { httpAgent: proxyAgent, httpsAgent: proxyAgent }),

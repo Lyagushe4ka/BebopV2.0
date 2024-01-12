@@ -103,6 +103,14 @@ async function main() {
       const rndAmount = randomBetween(minAmount, +maxAmount, 2);
       return parseUnits(rndAmount.toString(), TOKENS[CHAIN][token].decimals);
     });
+
+    if (tokensFrom.length > 2) {
+      // remove one random token
+      const rnd = Math.floor(Math.random() * tokensFrom.length);
+      tokensFrom.splice(rnd, 1);
+      amountsIn.splice(rnd, 1);
+    }
+
     let tokensTo = [...shuffleArray(TOKEN_TICKERS.filter((token) => !tokensFrom.includes(token)))];
 
     if (tokensTo.length > 1) {
@@ -155,8 +163,10 @@ async function main() {
         await sleep({ seconds: 5 });
       }
     }
+    const ratio = randomBetween(0.2, 0.6, 1);
+    const ratios = [ratio, 1 - ratio];
 
-    const quote = await getQuote(wallet, CHAIN, tokensFrom, tokensTo, amountsIn, proxy);
+    const quote = await getQuote(wallet, CHAIN, tokensFrom, tokensTo, amountsIn, ratios, proxy);
 
     if (!quote) {
       console.log(`\nWallet ${address} failed to get quote.\n`);
@@ -189,16 +199,25 @@ async function main() {
       statsDB.increment(address, 'volumeMulti', volume);
     }
 
-    await sendTelegramMessage(
-      `\nSwapped ${tokensFrom.join(', ')} to ${tokensTo.join(', ')}, volume made: ${volume.toFixed(
-        2,
-      )}$, tx: ${CHAINS[CHAIN].explorer}${order}\n`,
-    );
-    console.log(
-      `\nSwapped ${tokensFrom.join(', ')} to ${tokensTo.join(', ')}, volume made: ${volume.toFixed(
-        2,
-      )}$, tx: ${CHAINS[CHAIN].explorer}${order}\n`,
-    );
+    let message: string = `Swapped `;
+    for (const token of tokensFrom) {
+      const amount = Number(
+        formatUnits(amountsIn[tokensFrom.indexOf(token)], TOKENS[CHAIN][token].decimals),
+      );
+      message += `${tokensFrom.indexOf(token) === 1 ? 'and ' : ''}${amount.toFixed(2)} ${token} `;
+    }
+
+    if (tokensTo.length === 1) {
+      message += `to ${volume.toFixed(2)} ${tokensTo[0]}`;
+    } else {
+      message += `to ${(volume * ratios[0]).toFixed(2)} ${tokensTo[0]} and ${(
+        volume * ratios[1]
+      ).toFixed(2)} ${tokensTo[1]}`;
+    }
+    message += `, volume made: ${volume.toFixed(2)}$, tx: ${CHAINS[CHAIN].explorer}${order}\n`;
+
+    await sendTelegramMessage(message);
+    console.log(message);
 
     const timeoutMin = convertTimeToSeconds(LIMITS.timeoutMin);
     const timeoutMax = convertTimeToSeconds(LIMITS.timeoutMax);
