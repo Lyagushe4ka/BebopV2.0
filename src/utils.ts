@@ -107,7 +107,7 @@ export const randomBetween = (min: number, max: number, roundTo?: number): numbe
 
 export async function retry<T>(
   fn: () => Promise<T>,
-  attempts = 5,
+  attempts = 3,
   timeoutInSec = 6,
   logger?: (text: string, isError: boolean) => Promise<any>,
 ): Promise<T> {
@@ -119,7 +119,7 @@ export async function retry<T>(
     try {
       response = await fn();
       break;
-    } catch (e: unknown) {
+    } catch (e: any) {
       if (e instanceof Error) {
         const text = `[RETRY] Error while executing function. Message: ${
           e.message
@@ -138,7 +138,7 @@ export async function retry<T>(
         }
       }
       if (attempts === 0) {
-        return Promise.reject(e);
+        return Promise.reject(e.message);
       }
       await sleep({ seconds: timeoutInSec });
     }

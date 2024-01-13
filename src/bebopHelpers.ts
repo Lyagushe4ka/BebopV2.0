@@ -67,6 +67,7 @@ export async function sendOrder(
   );
 
   if (response.status !== 200 || response.data.error || response.data.status !== 'Success') {
+    console.log(response.data?.error ?? response.data);
     return undefined;
   }
 
