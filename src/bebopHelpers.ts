@@ -1,10 +1,19 @@
-import { SocksProxyAgent } from 'socks-proxy-agent';
-import { Chains, Permit2Data, Quote, Tokens } from './types';
-import axios from 'axios';
-import { API_URL, CHAINS, TOKENS, bebopDomain, typesBebop } from './constants';
-import { randomBetween, retry } from './utils';
+import {
+  Chains,
+  OrderStatus,
+  OrderType,
+  Permit2Data,
+  Quote,
+  QuoteParams,
+  QuoteResponse,
+  ToSignJam,
+  ToSignPMM,
+  Tokens,
+} from './types';
+import { createAgents, retry, sleep } from './utils';
 import { Wallet } from 'ethers';
 import { FLAGS } from '../deps/config';
+import { API, CHAINS, TOKENS, bebopTypesJam, bebopTypesPmm } from './constants';
 
 export async function getQuote(
   wallet: Wallet,
@@ -14,23 +23,42 @@ export async function getQuote(
   amountsIn: bigint[],
   ratios: number[],
   proxy: string,
-): Promise<Quote | undefined> {
-  const proxyAgent = FLAGS.useProxy ? new SocksProxyAgent(proxy) : undefined;
+): Promise<
+  | {
+      type: OrderType;
+      quote: Quote;
+    }
+  | undefined
+> {
+  const agents = FLAGS.useProxy ? createAgents(proxy) : {};
 
   const name = CHAINS[chainId].name;
-  const tokenInAddresses = tokensIn.map((token) => TOKENS[chainId][token].address);
-  const tokenOutAddresses = tokensOut.map((token) => TOKENS[chainId][token].address);
-  const tokensInStr = tokenInAddresses.join('%2C');
-  const tokensOutStr = tokenOutAddresses.join('%2C');
-  const sellAmountsStr = amountsIn.map((amount) => amount.toString()).join('%2C');
+  const tokenInAddresses = tokensIn.map((token) => TOKENS[chainId][token]!.address); // TODO: check if token exists
+  const tokenOutAddresses = tokensOut.map((token) => TOKENS[chainId][token]!.address); // TODO: check if token exists
+  const tokensInStr = tokenInAddresses.join(',');
+  const tokensOutStr = tokenOutAddresses.join(',');
+  const sellAmountsStr = amountsIn.join(',');
+  const ratiosStr = ratios.join(',');
 
-  const ratiosString =
-    tokenOutAddresses.length > 1 ? `&buy_tokens_ratios=${ratios[0]}%2C${ratios[1]}` : '';
+  const params: QuoteParams = {
+    buy_tokens: tokensOutStr,
+    sell_tokens: tokensInStr,
+    taker_address: wallet.address,
+    receiver_address: wallet.address,
+    source: 'bebop',
+    approval_type: 'Permit2',
+    sell_amounts: sellAmountsStr,
+  };
 
-  const url = `${API_URL}/${name}/v2/quote?sell_tokens=${tokensInStr}&buy_tokens=${tokensOutStr}&sell_amounts=${sellAmountsStr}&taker_address=${wallet.address}&source=bebop&approval_type=Permit2${ratiosString}`;
+  if (tokenOutAddresses.length > 1) {
+    params.buy_tokens_ratios = ratiosStr;
+  }
 
   const response = await retry(() =>
-    axios.get(url, { httpAgent: proxyAgent, httpsAgent: proxyAgent }),
+    API.get(`/router/${name}/v1/quote`, {
+      params,
+      ...agents,
+    }),
   );
 
   if (response.data.error) {
@@ -38,38 +66,99 @@ export async function getQuote(
     return undefined;
   }
 
-  return response.data;
+  if (response.data.routes.length === 0) {
+    console.log('No routes found.');
+    return undefined;
+  }
+
+  return (response.data as QuoteResponse).routes[0];
 }
 
-export async function signOrder(wallet: Wallet, chainId: Chains, dataToSign: any): Promise<string> {
-  const sig = await retry(() => wallet.signTypedData(bebopDomain(chainId), typesBebop, dataToSign));
+export async function signOrder(
+  orderType: OrderType,
+  wallet: Wallet,
+  chainId: Chains,
+  dataToSign: ToSignJam | ToSignPMM,
+  verifyingContract: string,
+): Promise<string> {
+  const types = orderType === 'Jam' ? bebopTypesJam : bebopTypesPmm;
+
+  const domain = {
+    name: orderType === 'Jam' ? 'JamSettlement' : 'BebopSettlement',
+    version: '1',
+    chainId,
+    verifyingContract,
+  };
+
+  const sig = await retry(() => wallet.signTypedData(domain, types, dataToSign));
 
   return sig;
 }
 
 export async function sendOrder(
+  orderType: OrderType,
   chainId: Chains,
   permit2: Permit2Data,
   quote_id: string,
   signature: string,
   proxy: string,
 ): Promise<string | undefined> {
-  const proxyAgent = FLAGS.useProxy ? new SocksProxyAgent(proxy) : undefined;
+  const agents = FLAGS.useProxy ? createAgents(proxy) : {};
 
   const name = CHAINS[chainId].name;
 
-  const url = `${API_URL}/${name}/v2/order`;
+  const endpoint = orderType === 'Jam' ? `/jam/${name}/v1/order` : `/${name}/v2/order`;
 
-  const response = await axios.post(
-    url,
-    { permit2, quote_id, signature },
-    { httpAgent: proxyAgent, httpsAgent: proxyAgent },
+  const response = await API.post(
+    endpoint,
+    { permit2, quote_id, signature, sign_scheme: 'EIP712' },
+    { ...agents },
   );
 
-  if (response.status !== 200 || response.data.error || response.data.status !== 'Success') {
-    console.log(response.data?.error ?? response.data);
+  const data = response.data;
+
+  if (response.status !== 200 || data.error) {
+    console.log(data.error);
+    return undefined;
+  }
+  //  { error: { errorCode: number; message: string } };
+
+  if ((data as { txHash: string; status: OrderStatus }).status === OrderStatus.FAILED) {
+    console.log('Order failed.');
     return undefined;
   }
 
-  return response.data.txHash;
+  let tx: string = data.txHash;
+  let status: OrderStatus = data.status;
+  while (status !== OrderStatus.SUCCESS && status !== OrderStatus.SETTLED) {
+    await sleep({ seconds: 5 }, { seconds: 15 });
+
+    const statusData = await getStatus(orderType, chainId, quote_id, proxy);
+    status = statusData.status;
+    tx = statusData.txHash;
+  }
+
+  return tx;
+}
+
+export async function getStatus(
+  orderType: OrderType,
+  chainId: Chains,
+  quote_id: string,
+  proxy: string,
+) {
+  const agents = FLAGS.useProxy ? createAgents(proxy) : {};
+
+  const name = CHAINS[chainId].name;
+  const endpoint =
+    orderType === 'Jam' ? `/jam/${name}/v1/order-status` : `/${name}/v2/order-status`;
+
+  const response = await API.get(endpoint, {
+    params: { quote_id },
+    ...agents,
+  });
+
+  const data = response.data as { status: OrderStatus; txHash: string };
+
+  return data;
 }

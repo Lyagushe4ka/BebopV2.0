@@ -1,198 +1,113 @@
-import { Wallet, formatUnits, parseUnits } from 'ethers';
-import { CHAIN, FLAGS, LIMITS, MIN_BAL_IN_USD } from './deps/config';
+import { Wallet, formatUnits } from 'ethers';
 import {
   CHAINS,
   TOKENS,
-  TOKEN_TICKERS,
-  Tokens,
-  allowance,
-  approve,
-  convertTimeToSeconds,
-  createProvider,
+  approveIfNeeded,
   gasPriceGuard,
+  generateTokensToSwap,
   getBalances,
   getPermit2Data,
   getQuote,
-  randomBetween,
-  readData,
+  keysLeft,
+  limitsReached,
+  rndKeyPair,
   sendOrder,
   sendTelegramMessage,
-  shuffleArray,
   signOrder,
   sleep,
+  startScript,
   statsDB,
-  updateRates,
+  timeout,
 } from './src';
 
 async function main() {
-  let { keys, proxies = [] } = readData();
-
-  statsDB.load();
-  await updateRates();
-
-  const provider = createProvider(CHAIN);
+  const { keys, proxies, chain, provider } = await startScript();
 
   while (true) {
     try {
-      if (keys.length === 0) {
-        console.log('No wallets left.');
-        await sendTelegramMessage('\n🏁No wallets left, exiting...\n');
-        statsDB.save();
+      if (!(await keysLeft(keys))) {
         break;
       }
 
-      await gasPriceGuard(CHAIN, LIMITS.maxGasPrice[CHAIN]);
-
-      let lastSwap = false;
-      const rnd = Math.floor(Math.random() * keys.length);
-
-      const key = keys[rnd];
-      const proxy = proxies[rnd];
+      const { key, proxy, index } = rndKeyPair(keys, proxies);
 
       const wallet = new Wallet(key, provider);
       const address = wallet.address;
       console.log(`\nUsing wallet ${address}\n`);
 
-      if (FLAGS.useTxLimit) {
-        const txCountSingle = statsDB.get(address, 'transactionsSingle');
-        const txCountMulti = statsDB.get(address, 'transactionsMulti');
-
-        if (txCountSingle >= LIMITS.maxTxSingle && txCountMulti >= LIMITS.maxTxMulti) {
-          keys.splice(rnd, 1);
-          proxies.splice(rnd, 1);
-          console.log(`\nWallet ${address} reached tx limit, removing from the list...\n`);
-          await sendTelegramMessage(
-            `\nWallet ${address} reached tx limit, removing from the list...\n`,
-          );
-
-          lastSwap = true;
-        }
-      } else if (FLAGS.useVolumeLimit) {
-        const volumeSingle = statsDB.get(address, 'volumeSingle');
-        const volumeMulti = statsDB.get(address, 'volumeMulti');
-
-        if (volumeSingle >= LIMITS.maxVolumeSingle && volumeMulti >= LIMITS.maxVolumeMulti) {
-          keys.splice(rnd, 1);
-          proxies.splice(rnd, 1);
-          console.log(`\nWallet ${address} reached volume limit, removing from the list...\n`);
-          await sendTelegramMessage(
-            `\nWallet ${address} reached volume limit, removing from the list...\n`,
-          );
-
-          lastSwap = true;
-        }
-      }
-
-      const balances = await getBalances(wallet, CHAIN);
-
-      if (Object.keys(balances).length === 0) {
-        if (lastSwap) {
-          continue;
-        }
-
-        keys.splice(rnd, 1);
-        proxies.splice(rnd, 1);
-        console.log(`\nWallet ${address} is empty, removing from the list...\n`);
-        await sendTelegramMessage(`\nWallet ${address} is empty, removing from the list...\n`);
+      if (await limitsReached(address)) {
+        keys.splice(index, 1);
+        proxies.splice(index, 1);
         continue;
       }
 
-      let tokensFrom = [...TOKEN_TICKERS.filter((token) => balances[token])];
-      let amountsIn = tokensFrom.map((token) => {
-        const minAmount = MIN_BAL_IN_USD;
-        const maxAmount = formatUnits(balances[token]!, TOKENS[CHAIN][token].decimals);
-        const rndAmount = randomBetween(minAmount, +maxAmount, 2);
-        return parseUnits(rndAmount.toString(), TOKENS[CHAIN][token].decimals);
-      });
+      const balances = await getBalances(wallet, chain);
 
-      if (tokensFrom.length > 2) {
-        // remove one random token
-        const rnd = Math.floor(Math.random() * tokensFrom.length);
-        tokensFrom.splice(rnd, 1);
-        amountsIn.splice(rnd, 1);
+      if (Object.keys(balances).length === 0) {
+        keys.splice(index, 1);
+        proxies.splice(index, 1);
+        continue;
       }
 
-      let tokensTo = [
-        ...shuffleArray(TOKEN_TICKERS.filter((token) => !tokensFrom.includes(token))),
-      ];
+      await gasPriceGuard(chain);
 
-      if (tokensTo.length > 1) {
-        let numTokens = Math.floor(Math.random() * 2) + 1; // Randomly choose either 1 or 2
+      const tokensData = await generateTokensToSwap(chain, address, balances);
 
-        const txCountSingle = statsDB.get(address, 'transactionsSingle');
-        const txCountMulti = statsDB.get(address, 'transactionsMulti');
-        if (LIMITS.maxTxMulti <= txCountMulti) {
-          numTokens = 1;
-        } else if (LIMITS.maxTxSingle <= txCountSingle) {
-          numTokens = 2;
-        }
-
-        tokensTo = tokensTo.slice(0, numTokens); // Get the first 1 or 2 tokens
+      if (!tokensData) {
+        keys.splice(index, 1);
+        proxies.splice(index, 1);
+        continue;
       }
 
-      if (lastSwap) {
-        tokensFrom = Object.keys(balances).filter(
-          (token) => token !== FLAGS.finalToken,
-        ) as Tokens[];
+      const { tokensFrom, tokensTo, ratios } = tokensData;
+      const amountsIn = tokensFrom.map((token) => balances[token]!);
 
-        if (tokensFrom.length === 0) {
-          console.log(`\nNothing to swap to final token on wallet: ${address}\n`);
-          await sendTelegramMessage(`\nNothing to swap to final token on wallet: ${address}\n`);
-          continue;
-        }
+      const approves = await approveIfNeeded(wallet, chain, tokensFrom, balances);
 
-        amountsIn = tokensFrom.map((token) => balances[token]!);
-        tokensTo = [FLAGS.finalToken];
+      if (!approves) {
+        continue;
       }
 
       console.log(`\nSwapping ${tokensFrom.join(', ')} to ${tokensTo.join(', ')}\n`);
 
-      for (const token of tokensFrom) {
-        const allow = await allowance(wallet, CHAIN, token);
-
-        if (allow < balances[token]!) {
-          const tx = await approve(wallet, CHAIN, token);
-
-          if (!tx) {
-            console.log(`\nWallet ${address} failed to approve ${token}.\n`);
-            continue;
-          } else {
-            console.log(
-              `\nWallet ${address} approved ${token} for Permit2 contract, tx: ${CHAINS[CHAIN].explorer}/${tx.hash}\n`,
-            );
-            await sendTelegramMessage(
-              `\nWallet ${address} approved ${token} for Permit2 contract, tx: ${CHAINS[CHAIN].explorer}/${tx.hash}\n`,
-            );
-          }
-
-          await sleep({ seconds: 5 });
-        }
-      }
-      const ratio = randomBetween(0.2, 0.6, 1);
-      const ratios = [ratio, 1 - ratio];
-
-      const quote = await getQuote(wallet, CHAIN, tokensFrom, tokensTo, amountsIn, ratios, proxy);
+      const quote = await getQuote(wallet, chain, tokensFrom, tokensTo, amountsIn, ratios, proxy);
 
       if (!quote) {
         console.log(`\nWallet ${address} failed to get quote.\n`);
         continue;
       }
 
-      const permit = await getPermit2Data(wallet, CHAIN, tokensFrom, quote.expiry);
+      const liquidityType = quote.type === 'Jam' ? quote.quote.solver : 'bebop liquidity';
+      console.log(`\nGot quote from: ${liquidityType}\n`);
 
-      const sig = await signOrder(wallet, CHAIN, quote.toSign);
+      const deadline = Math.floor((Date.now() + 20 * 60 * 1000) / 1000);
+      const permit = await getPermit2Data(
+        wallet,
+        chain,
+        tokensFrom,
+        deadline,
+        quote.quote.approvalTarget,
+      );
 
-      const order = await sendOrder(CHAIN, permit, quote.quoteId, sig, proxy);
+      const sig = await signOrder(
+        quote.type,
+        wallet,
+        chain,
+        quote.quote.toSign,
+        quote.quote.settlementAddress,
+      );
+
+      const order = await sendOrder(quote.type, chain, permit, quote.quote.quoteId, sig, proxy);
 
       if (!order) {
         console.log(`\nWallet ${address} failed to send order.\n`);
         continue;
       }
 
-      statsDB.increment(address, 'fees', quote.gasFee.usd);
+      statsDB.increment(address, 'fees', +quote.quote.gasFee.usd.toFixed(2));
 
       const volume = amountsIn.reduce((a, b, i) => {
-        const amount = Number(formatUnits(b, TOKENS[CHAIN][tokensFrom[i]].decimals));
+        const amount = Number(formatUnits(b, TOKENS[chain][tokensFrom[i]]!.decimals));
         return a + amount;
       }, 0);
 
@@ -207,7 +122,7 @@ async function main() {
       let message: string = `Swapped `;
       for (const token of tokensFrom) {
         const amount = Number(
-          formatUnits(amountsIn[tokensFrom.indexOf(token)], TOKENS[CHAIN][token].decimals),
+          formatUnits(amountsIn[tokensFrom.indexOf(token)], TOKENS[chain][token]!.decimals),
         );
         message += `${tokensFrom.indexOf(token) === 1 ? 'and ' : ''}${amount.toFixed(2)} ${token} `;
       }
@@ -219,22 +134,12 @@ async function main() {
           volume * ratios[1]
         ).toFixed(2)} ${tokensTo[1]}`;
       }
-      message += `, volume made: ${volume.toFixed(2)}$, tx: ${CHAINS[CHAIN].explorer}${order}\n`;
+      message += `, volume made: ${volume.toFixed(2)}$, tx: ${CHAINS[chain].explorer}${order}\n`;
 
       await sendTelegramMessage(message);
       console.log(message);
 
-      const timeoutMin = convertTimeToSeconds(LIMITS.timeoutMin);
-      const timeoutMax = convertTimeToSeconds(LIMITS.timeoutMax);
-      const rndTimeout = randomBetween(timeoutMin, timeoutMax, 0);
-
-      console.log(
-        `\nSleeping for ${rndTimeout} seconds / ${(rndTimeout / 60).toFixed(1)} minutes\n`,
-      );
-      await sendTelegramMessage(
-        `\nSleeping for ${rndTimeout} seconds / ${(rndTimeout / 60).toFixed(1)} minutes\n`,
-      );
-      await sleep({ seconds: rndTimeout });
+      await timeout();
     } catch (e: any) {
       console.log(`\nCaught error: ${e.message}\n`);
       await sleep({ seconds: 5 });

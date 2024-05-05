@@ -6,6 +6,8 @@ import {
   Wallet,
 } from 'ethers';
 import { Chains, Permit2Data, Tokens } from './types';
+import { Erc20Abi, Permit2Abi } from './abi';
+import { retry } from './utils';
 import {
   BEBOP_ROUTER,
   MAX_UINT160,
@@ -14,8 +16,6 @@ import {
   permit2Domain,
   typesPermit2,
 } from './constants';
-import { Erc20Abi, Permit2Abi } from './abi';
-import { retry } from './utils';
 
 export async function allowance(
   wallet: Wallet,
@@ -23,9 +23,13 @@ export async function allowance(
   token: Tokens,
   spender = PERMIT2,
 ): Promise<bigint> {
-  const tokenAddress = TOKENS[chainId][token].address;
+  const tokenData = TOKENS[chainId][token];
 
-  const contract = new Contract(tokenAddress, Erc20Abi, wallet);
+  if (!tokenData) {
+    throw new Error('Token not found');
+  }
+
+  const contract = new Contract(tokenData.address, Erc20Abi, wallet);
   return await retry(() => contract.allowance(wallet.address, spender));
 }
 
@@ -36,14 +40,30 @@ export async function approve(
   spender = PERMIT2,
   amount = MaxUint256,
 ): Promise<TransactionReceipt | undefined> {
-  const tokenAddress = TOKENS[chainId][token].address;
+  const tokenData = TOKENS[chainId][token];
 
-  const contract = new Contract(tokenAddress, Erc20Abi, wallet);
+  if (!tokenData) {
+    throw new Error('Token not found');
+  }
+
+  const contract = new Contract(tokenData.address, Erc20Abi, wallet);
   const tx: ContractTransactionResponse = await retry(() => contract.approve(spender, amount));
 
-  const receipt = await retry(() => tx.wait());
+  const receipt = await retry(
+    async () => {
+      const receipt = await wallet.provider!.getTransactionReceipt(tx.hash);
 
-  if (!receipt || receipt.status === 0) {
+      if (receipt === null) {
+        throw new Error('Got null receipt');
+      }
+
+      return receipt;
+    },
+    5,
+    10,
+  );
+
+  if (receipt.status === 0) {
     return undefined;
   }
 
@@ -56,11 +76,17 @@ export async function permit2Allowance(
   token: Tokens,
   spender = BEBOP_ROUTER,
 ): Promise<{ amount: bigint; expiration: bigint; nonce: bigint }> {
-  const tokenAddress = TOKENS[chainId][token].address;
+  const tokenData = TOKENS[chainId][token];
+
+  if (!tokenData) {
+    throw new Error('Token not found');
+  }
 
   const permit2Instance = new Contract(PERMIT2, Permit2Abi, wallet);
 
-  const data = await retry(() => permit2Instance.allowance(wallet.address, tokenAddress, spender));
+  const data = await retry(() =>
+    permit2Instance.allowance(wallet.address, tokenData.address, spender),
+  );
 
   const [amount, expiration, nonce] = data;
 
@@ -76,20 +102,26 @@ export async function getPermit2Data(
   chainId: Chains,
   tokens: Array<Tokens>,
   deadline: number,
+  spender: string,
   amount = MAX_UINT160,
-  spender = BEBOP_ROUTER,
 ): Promise<Permit2Data> {
   let value = {
     details: [] as any[],
-    spender: BEBOP_ROUTER,
+    spender,
     sigDeadline: deadline,
   };
 
   for (const token of tokens) {
     const { nonce } = await permit2Allowance(wallet, chainId, token, spender);
 
+    const tokenData = TOKENS[chainId][token];
+
+    if (!tokenData) {
+      throw new Error('Token not found');
+    }
+
     value.details.push({
-      token: TOKENS[chainId][token].address,
+      token: tokenData.address,
       amount,
       expiration: deadline,
       nonce: nonce.toString(),

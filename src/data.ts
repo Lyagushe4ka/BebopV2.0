@@ -2,10 +2,13 @@ import axios, { AxiosResponse } from 'axios';
 import { FLAGS } from '../deps/config';
 import { Stats, StatNames, RatesData } from './types';
 import fs from 'fs';
-import { TOKENS } from './constants';
+import { IS_STABLE } from './constants';
 
 export let data: Record<string, Stats>;
-export let ratesData: RatesData;
+export let ratesData: RatesData = {
+  rates: {} as any,
+  timestamp: 0,
+};
 
 export const statsDB = {
   load() {
@@ -85,7 +88,7 @@ export function readData(): { keys: string[]; proxies?: string[] } {
     });
 
     proxies = proxies.map((proxy) => {
-      return (proxy = 'socks5://' + proxy);
+      return (proxy = 'socks://' + proxy);
     });
 
     if (keys.length !== proxies.length) {
@@ -101,11 +104,13 @@ export function readData(): { keys: string[]; proxies?: string[] } {
 export const updateRates = async (): Promise<void> => {
   const endpoint = 'https://api.binance.com/api/v3/ticker/price';
   let response: AxiosResponse;
+
   try {
     response = await axios.get(endpoint);
   } catch (error) {
     return undefined;
   }
+
   const rawData = response.data;
   const prices: Record<string, number> = {};
   for (const { symbol, price } of rawData) {
@@ -114,19 +119,19 @@ export const updateRates = async (): Promise<void> => {
     }
   }
 
-  for (const token of Object.values(TOKENS[1])) {
-    if (token.isStable) {
-      continue;
+  for (const [token, isStable] of Object.entries(IS_STABLE)) {
+    let rate: number;
+    if (isStable) {
+      rate = 1;
+    } else {
+      const tokenName = token.startsWith('W') ? token.substring(1) : token;
+      rate = prices[tokenName] || 0;
     }
 
-    const tokenName = token.name.startsWith('W') ? token.name.substring(1) : token.name;
-
-    if (prices[tokenName]) {
-      ratesData.rates = {
-        ...ratesData.rates,
-        [token.name]: prices[tokenName],
-      };
-    }
+    ratesData.rates = {
+      ...ratesData.rates,
+      [token]: rate,
+    };
   }
 
   ratesData = {

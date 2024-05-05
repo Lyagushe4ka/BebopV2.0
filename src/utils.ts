@@ -1,14 +1,17 @@
 import { Contract, JsonRpcProvider, Wallet, formatUnits, parseUnits } from 'ethers';
-import { CHAINS, TOKENS } from './constants';
 import { Chains, TimeSeparated, Tokens } from './types';
-import { TG_CHAT_ID, TG_TOKEN, MIN_BAL_IN_USD } from '../deps/config';
+import { TG_CHAT_ID, TG_TOKEN, MIN_BAL_IN_USD_FOR_TOKEN, LIMITS } from '../deps/config';
 import axios from 'axios';
 import { Erc20Abi } from './abi';
 import { updateRates, ratesData } from './data';
+import { CHAINS, TOKENS } from './constants';
+import { SocksProxyAgent } from 'socks-proxy-agent';
 
-export const gasPriceGuard = async (chainId: Chains, maxGasPrice: string) => {
+export const gasPriceGuard = async (chainId: Chains) => {
   console.log(`\n[GAS PRICE GUARD] Started for ${CHAINS[chainId].name} chain\n`);
   const rpc = chainId === Chains.Polygon ? CHAINS[chainId].rpc : CHAINS[Chains.Ethereum].rpc;
+  const maxGasPrice =
+    chainId === Chains.Polygon ? LIMITS.maxGasPrice.Polygon : LIMITS.maxGasPrice.L2;
   const provider = new JsonRpcProvider(rpc);
   const maxGasPriceInWei = parseUnits(maxGasPrice, 'gwei');
   let startingWaitTime = 1;
@@ -37,18 +40,30 @@ export const gasPriceGuard = async (chainId: Chains, maxGasPrice: string) => {
 
 export const getBalances = async (wallet: Wallet, chainId: Chains) => {
   let balances: Partial<Record<Tokens, bigint>> = {};
-  for (const token of Object.values(TOKENS[chainId])) {
-    const tokenInstance = new Contract(token.address, Erc20Abi, wallet);
+
+  let tokens: Tokens[] = [];
+  for (const [token, enabled] of Object.entries(LIMITS.tokens[chainId])) {
+    if (enabled) {
+      tokens.push(token as Tokens);
+    }
+  }
+
+  for (const token of tokens) {
+    const tokenData = TOKENS[chainId][token];
+
+    if (!tokenData) {
+      continue;
+    }
+
+    const tokenInstance = new Contract(tokenData.address, Erc20Abi, wallet);
 
     if (!ratesData || ratesData.timestamp + 60 * 60 * 1000 < Date.now()) {
       await updateRates();
     }
-    const tokenRate = token.isStable ? 1 : ratesData.rates[token.name];
+    const tokenRate = ratesData.rates[token];
 
-    const minbalInEther = token.isStable
-      ? MIN_BAL_IN_USD.toString()
-      : (MIN_BAL_IN_USD * tokenRate!).toFixed(6);
-    const minBalInWei = parseUnits(minbalInEther, token.decimals);
+    const minbalInEther = (MIN_BAL_IN_USD_FOR_TOKEN * tokenRate).toFixed(6);
+    const minBalInWei = parseUnits(minbalInEther, tokenData.decimals);
 
     const balance = await retry(() => tokenInstance.balanceOf(wallet.address));
 
@@ -56,9 +71,21 @@ export const getBalances = async (wallet: Wallet, chainId: Chains) => {
       continue;
     }
 
-    balances[token.name] = balance;
+    balances[tokenData.name] = balance;
   }
   return balances;
+};
+
+export const timeout = async () => {
+  const timeoutMin = convertTimeToSeconds(LIMITS.timeoutMin);
+  const timeoutMax = convertTimeToSeconds(LIMITS.timeoutMax);
+  const rndTimeout = randomBetween(timeoutMin, timeoutMax, 0);
+
+  console.log(`\nSleeping for ${rndTimeout} seconds / ${(rndTimeout / 60).toFixed(1)} minutes\n`);
+  await sendTelegramMessage(
+    `\nSleeping for ${rndTimeout} seconds / ${(rndTimeout / 60).toFixed(1)} minutes\n`,
+  );
+  await sleep({ seconds: rndTimeout });
 };
 
 export const createProvider = (chainId: Chains) => {
@@ -169,3 +196,10 @@ export async function sendTelegramMessage(message: string) {
     console.log(error.message);
   }
 }
+
+export const createAgents = (proxy: string) => {
+  return {
+    httpAgent: new SocksProxyAgent(proxy),
+    httpsAgent: new SocksProxyAgent(proxy),
+  };
+};

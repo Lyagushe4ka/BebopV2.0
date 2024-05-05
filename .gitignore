@@ -4,3 +4,5 @@
 /deps/proxies.txt
 /deps/config.ts
 /deps/stats.json
+
+test.ts
