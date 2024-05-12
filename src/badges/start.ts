@@ -70,7 +70,6 @@ export async function startClaim() {
         }
 
         if (eligibility === false) {
-          console.log('Badge is not eligible');
           continue;
         }
 
@@ -98,6 +97,8 @@ export async function startClaim() {
 
       keys.splice(index, 1);
       proxies.splice(index, 1);
+
+      console.log(`\nWallet ${address} finished and removed from the list\n`);
 
       await timeout();
     } catch (e: any) {
