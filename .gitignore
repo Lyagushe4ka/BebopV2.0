@@ -4,5 +4,7 @@
 /deps/proxies.txt
 /deps/config.ts
 /deps/stats.json
+/deps/auth.json
+/deps/badges.json
 
 test.ts

@@ -1,13 +1,13 @@
 import { Wallet } from 'ethers';
 import { FLAGS, LIMITS } from '../deps/config';
-import { readData, statsDB, updateRates } from './data';
+import { authDB, badgesDB, readData, statsDB, updateRates } from './data';
 import { Chains, Tokens } from './types';
 import { createProvider, randomBetween, sendTelegramMessage, shuffleArray, sleep } from './utils';
 import { allowance, approve } from './approvalHelpers';
 import { CHAINS } from './constants';
 
 export async function startScript() {
-  const chainId = parseInt(process.env.CHAIN ?? '0');
+  const chainId = parseInt(process.env.CHAIN ?? '137');
 
   if (!(chainId in Chains)) {
     throw new Error('Invalid chain id');
@@ -17,6 +17,8 @@ export async function startScript() {
   let { keys, proxies = [] } = readData();
 
   statsDB.load();
+  authDB.load();
+  badgesDB.load();
   await updateRates();
 
   const provider = createProvider(chain);
@@ -196,6 +198,8 @@ export const keysLeft = async (keys: string[]): Promise<boolean> => {
     console.log('No wallets left.');
     await sendTelegramMessage('\n🏁No wallets left, exiting...\n');
     statsDB.save();
+    authDB.save();
+    badgesDB.save();
     return false;
   }
 

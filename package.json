@@ -6,7 +6,8 @@
   "scripts": {
     "lint": "tsc --noEmit",
     "start": "ts-node index.ts",
-    "test": "ts-node test.ts"
+    "test": "ts-node test.ts",
+    "badges": "ts-node src/badges/start.ts"
   },
   "author": "",
   "license": "ISC",

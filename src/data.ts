@@ -3,11 +3,112 @@ import { FLAGS } from '../deps/config';
 import { Stats, StatNames, RatesData } from './types';
 import fs from 'fs';
 import { IS_STABLE } from './constants';
+import { Badges } from './badges';
 
+export let authTokens: Record<string, string>;
+export let claimedBadgesData: Record<string, Badges.Badges>;
 export let data: Record<string, Stats>;
 export let ratesData: RatesData = {
   rates: {} as any,
   timestamp: 0,
+};
+
+export const badgesDB = {
+  load() {
+    if (fs.existsSync('./deps/badges.json')) {
+      const fileData = fs.readFileSync('./deps/badges.json', 'utf8');
+
+      if (fileData === '') {
+        claimedBadgesData = {};
+        return;
+      }
+
+      claimedBadgesData = JSON.parse(fileData);
+    } else {
+      claimedBadgesData = {};
+    }
+  },
+
+  init(wallet: string) {
+    claimedBadgesData[wallet] = {
+      '10_trades': false,
+      '25_trades': false,
+      '50_trades': false,
+      '100_trades': false,
+      '1k_volume': false,
+      '5k_volume': false,
+      '10k_volume': false,
+      '25k_volume': false,
+      '10_trades_multi': false,
+      '25_trades_multi': false,
+      '50_trades_multi': false,
+      '100_trader_multi': false,
+      mode: false,
+      base: false,
+      optimism: false,
+      blast: false,
+      zksync: false,
+      arbitrum: false,
+      bnb: false,
+      halloween: false,
+    };
+  },
+
+  set(wallet: string, badge: Badges.BadgesNames, value: boolean) {
+    if (!claimedBadgesData[wallet]) {
+      this.init(wallet);
+    }
+    claimedBadgesData[wallet][badge] = value;
+  },
+
+  get(wallet: string, statName: Badges.BadgesNames) {
+    if (!claimedBadgesData[wallet]) {
+      this.init(wallet);
+    }
+    return claimedBadgesData[wallet][statName];
+  },
+
+  save() {
+    fs.writeFileSync(
+      './deps/badges.json',
+      claimedBadgesData ? JSON.stringify(claimedBadgesData, null, 2) : '',
+    );
+  },
+};
+
+export const authDB = {
+  load() {
+    if (fs.existsSync('./deps/auth.json')) {
+      const fileData = fs.readFileSync('./deps/auth.json', 'utf8');
+
+      if (fileData === '') {
+        authTokens = {};
+        return;
+      }
+
+      authTokens = JSON.parse(fileData);
+    } else {
+      authTokens = {};
+    }
+  },
+
+  set(wallet: string, token: string) {
+    authTokens[wallet] = token;
+  },
+
+  get(wallet: string) {
+    const token = authTokens[wallet];
+
+    if (!token || token === '') {
+      return null;
+    }
+
+    return token;
+  },
+
+  save() {
+    fs.writeFileSync('./deps/auth.json', authTokens ? JSON.stringify(authTokens, null, 2) : '');
+  },
 };
 
 export const statsDB = {

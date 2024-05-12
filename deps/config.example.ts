@@ -1,4 +1,5 @@
 import { Chains, Tokens } from '../src';
+import { Badges } from '../src/badges';
 
 export const TG_CHAT_ID: number = 0; // specify your telegram chat id to receive notifications
 export const TG_TOKEN: string = ''; // specify your telegram bot token to receive notifications
@@ -85,4 +86,27 @@ export const FLAGS = {
   useTxLimit: true, // specify whether to use tx limit or not
   useVolumeLimit: true, // specify whether to use volume limit or not
   useGasPriceLimit: true, // specify whether to use gas price limit or not
+};
+
+export const BADGES: Badges.Badges = {
+  '10_trades': true,
+  '25_trades': true,
+  '50_trades': true,
+  '100_trades': true,
+  '1k_volume': true,
+  '5k_volume': true,
+  '10k_volume': true,
+  '25k_volume': true,
+  '10_trades_multi': true,
+  '25_trades_multi': true,
+  '50_trades_multi': true,
+  '100_trader_multi': true,
+  mode: true,
+  base: true,
+  optimism: true,
+  blast: true,
+  zksync: true,
+  arbitrum: true,
+  bnb: true,
+  halloween: true,
 };
