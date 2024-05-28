@@ -48,7 +48,7 @@ export async function startClaim() {
           continue;
         }
 
-        console.log(`Checking badge ${badgeName}`);
+        console.log(`\nChecking badge ${badgeName}`);
 
         const badgeId = BADGE_IDS[badgeName];
         const processIdEligibility = await checkEligibility(badgeId, authToken, proxy);

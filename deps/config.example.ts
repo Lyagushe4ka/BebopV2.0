@@ -6,6 +6,8 @@ export const TG_TOKEN: string = ''; // specify your telegram bot token to receiv
 
 export const MIN_BAL_IN_USD_FOR_TOKEN = 25; // specify minimum balance in USD to swap this token
 
+export const CHAIN: Chains = 137; // specify chain id to use
+
 export const LIMITS = {
   maxTxSingle: 5, // specify maximum tx count on 1 to 1 token swaps
   maxTxMulti: 5, // specify maximum tx count on one to many or many to one token swaps

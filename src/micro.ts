@@ -1,5 +1,5 @@
 import { Wallet } from 'ethers';
-import { FLAGS, LIMITS } from '../deps/config';
+import { CHAIN, FLAGS, LIMITS } from '../deps/config';
 import { authDB, badgesDB, readData, statsDB, updateRates } from './data';
 import { Chains, Tokens } from './types';
 import { createProvider, randomBetween, sendTelegramMessage, shuffleArray, sleep } from './utils';
@@ -7,7 +7,7 @@ import { allowance, approve } from './approvalHelpers';
 import { CHAINS } from './constants';
 
 export async function startScript() {
-  const chainId = parseInt(process.env.CHAIN ?? '137');
+  const chainId = CHAIN;
 
   if (!(chainId in Chains)) {
     throw new Error('Invalid chain id');
